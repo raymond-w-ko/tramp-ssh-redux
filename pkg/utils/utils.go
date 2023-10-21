@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 )
@@ -59,17 +58,17 @@ func FatalMessageAsJson(v ...any) {
 	os.Exit(1)
 }
 
-func ChdirToSelfExecutablePath() {
+// this must be silent to avoid polluting stdout, for example in cilent
+func ChdirToSelfExecutablePath() error {
 	ex, err := os.Executable()
 	if err != nil {
-		LogStderr("Could not get self executable path")
-		log.Fatal(err)
+		return err
 	}
 	exPath := filepath.Dir(ex)
 	if err := os.Chdir(exPath); err != nil {
-		LogStderr("Could not change working directory to self executable path")
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

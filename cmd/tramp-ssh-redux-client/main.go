@@ -6,6 +6,11 @@ import (
 )
 
 func main() {
-	utils.ChdirToSelfExecutablePath()
+	err := utils.ChdirToSelfExecutablePath()
+	if (err != nil) {
+		utils.FatalMessageAsJson("Could not chdir to self executable path", err)
+	}
 	client.SetupConnectionToProxy()
+	cmd := client.ReadInitialCommandFromArgs()
+	client.SendCommandToProxyAndWriteOutputToStdout(cmd)
 }

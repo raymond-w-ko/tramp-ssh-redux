@@ -1,6 +1,8 @@
 package proxy
 
 import (
+  "encoding/json"
+	"io"
 	"os"
 	"log"
 	"net"
@@ -35,17 +37,55 @@ func SetupUnixSocket() {
 			// log.Fatal(err)
 			continue
 		}
-		go handleConnection(conn)
+		go handleClientConnection(conn)
 	}
 }
 
-func handleConnection(conn *net.UnixConn) {
-	buf := make([]byte, 1024)
-	_, err := conn.Read(buf)
-	if err != nil {
-		utils.LogStderr("Could not read from connection")
-		utils.LogStderr(err.Error())
-		return
+func handleClientConnection(conn *net.UnixConn) {
+	pr, rw := io.Pipe()
+
+	go func() {
+		for {
+			buf := make([]byte, utils.BufferSize)
+			_, err := conn.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					rw.Close()
+					return
+				}
+			}
+			rw.Write(buf)
+		}
+	}()
+
+	jsonDecoder := json.NewDecoder(pr)
+
+	for (true) {
+		var cmd map[string]interface{}
+		err := jsonDecoder.Decode(&cmd)
+		if err != nil {
+			if err == io.EOF {
+				return
+			}
+			utils.LogStderr("Error decoding JSON")
+			log.Fatal(err)
+		}
+
+		command := cmd["command"].(string)
+		oneshot := cmd["oneshot"].(bool)
+
+		switch command {
+		case "echo":
+			handleEchoCommand(conn, &cmd)
+		}
+		
+		if oneshot {
+			return
+		}
 	}
-	conn.Close()
+}
+
+func handleEchoCommand(conn *net.UnixConn, cmd *map[string]interface{}) {
+	jsonBytes, _ := json.Marshal(cmd)
+	conn.Write(jsonBytes)
 }

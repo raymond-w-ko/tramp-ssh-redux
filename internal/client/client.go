@@ -12,8 +12,6 @@ import (
 	"github.com/raymond-w-ko/tramp-ssh-redux/pkg/utils"
 )
 
-var conn *net.UnixConn
-
 func readNextJsonObjectFromStdin(inBuffer bytes.Buffer) map[string]interface{} {
 	var outBuffer bytes.Buffer
 	for {
@@ -48,6 +46,7 @@ func readNextJsonObject() map[string]interface{} {
 	return data
 }
 
+var proxyConn *net.UnixConn
 
 func SetupConnectionToProxy() {
 	var err error
@@ -58,31 +57,58 @@ func SetupConnectionToProxy() {
 		utils.FatalMessageAsJson("Could open addr for UNIX socket " + utils.SocketFile)
 	}
 
-	conn, err = net.DialUnix("unix", nil, addr)
+	proxyConn, err = net.DialUnix("unix", nil, addr)
 	if err != nil {
 		utils.FatalMessageAsJson("Could not dial UNIX socket " + utils.SocketFile)
 	}
-	defer conn.Close()
+}
 
-	cmd := readNextJsonObject()
-	jsonBytes, _ := json.Marshal(cmd)
-	_, err = conn.Write(jsonBytes)
+func ReadInitialCommandFromArgs() map[string]interface{} {
+	pr, rw := io.Pipe()
 
-	var resultBuffer bytes.Buffer
-	for {
-		b := make([]byte, 1024)
-		n, err := conn.Read(b)
-		if err != nil {
-			if err == io.EOF {
-				continue
-			}
-			utils.FatalMessageAsJson("Error reading byte when collecting JSON result")
-		}
-		resultBuffer.Write(b[:n])
-		if b[n-1] == '}' {
-			break
-		}
+	go func() {
+		jsonBytes := []byte(os.Args[1])
+		rw.Write(jsonBytes)
+		rw.Close()
+	}()
+
+	jsonDecoder := json.NewDecoder(pr)
+	cmd := make(map[string]interface{})
+	err := jsonDecoder.Decode(&cmd)
+	if err != nil {
+		utils.FatalMessageAsJson("Error decoding JSON:", err)
 	}
-	jsonResult := readNextJsonObjectFromStdin(resultBuffer)
-	utils.WriteJsonObjectToStdout(jsonResult)
+	return cmd
+}
+
+func SendCommandToProxyAndWriteOutputToStdout(cmd map[string]interface{}) {
+	jsonInputBytes, _ := json.Marshal(cmd)
+	proxyConn.Write(jsonInputBytes)
+
+	pr, rw := io.Pipe()
+	oneshot := cmd["oneshot"].(bool)
+
+	go func() {
+		for {
+			buf := make([]byte, utils.BufferSize)
+			_, err := proxyConn.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					rw.Close()
+					return
+				}
+			}
+			rw.Write(buf)
+		}
+	}()
+
+	if (oneshot) {
+		jsonDecoder := json.NewDecoder(pr)
+		var jsonResult map[string]interface{}
+		err := jsonDecoder.Decode(&jsonResult)
+		if err != nil {
+			utils.FatalMessageAsJson("Error decoding oneshot result JSON:", err)
+		}
+		utils.WriteJsonObjectToStdout(jsonResult)
+	}
 }

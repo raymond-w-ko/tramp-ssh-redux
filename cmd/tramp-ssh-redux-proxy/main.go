@@ -19,8 +19,6 @@ var serverStdoutPipe io.ReadCloser
 
 func main() {
 	utils.ChdirToSelfExecutablePath()
-	proxy.SetupServerProcess()
-	proxy.TestServerEcho()
 	proxy.SetupUnixSocket()
 }
 

@@ -26,7 +26,7 @@
   "TODO"
   (let* ((ssh-path "/ssh:rko@localhost:~/src/tramp-ssh-redux/Makefile")
          (base-cmd (tsr/create-base-cmd ssh-path))
-         (cmd (append base-cmd '(:action "echo")))
+         (cmd (append base-cmd '(:command "echo" :oneshot t)))
          (out-buf (generate-new-buffer (generate-new-buffer-name " *tsr/client-out*"))))
     (call-process tsr/client-path nil out-buf nil (json-serialize cmd))
 
